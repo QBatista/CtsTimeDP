@@ -4,7 +4,7 @@ Tests for `cts_household.py`.
 """
 
 import numpy as np
-from CtsTimeDP import Household
+from ctsdp import Household
 import scipy.io as spio
 import os
 

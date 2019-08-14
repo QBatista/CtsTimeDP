@@ -8,7 +8,9 @@ import os
 DESCRIPTION = "A package for solving continuous-time DP problems in Economics"
 
 setup(name='ctsdp',
-      packages=['ctsdp'],
+      packages=['ctsdp',
+                'ctsdp.util',
+                'ctsdp.tests'],
       version=0.1,
       description=DESCRIPTION,
       author='Quentin Batista',

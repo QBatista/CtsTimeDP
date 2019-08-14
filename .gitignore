@@ -3,7 +3,7 @@
 
 build/
 /dist/
-knightian_model.egg-info/
+ctsdp.egg-info/
 *.DS_Store
 *.TODO
 *.noseids

@@ -5,8 +5,8 @@ A module for solving continuous-time consumption saving problems.
 
 import numpy as np
 from scipy import sparse, optimize
-from CtsTimeDP.util import (CRRA_utility_function_factory, discrete_normal,
-                            verbose_decorator_factory)
+from ctsdp.util import (CRRA_utility_function_factory, discrete_normal,
+                        verbose_decorator_factory)
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from IPython.core.display import display
