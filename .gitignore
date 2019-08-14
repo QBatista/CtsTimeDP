@@ -1,0 +1,11 @@
+*.pyc
+*.ipynb_checkpoints*
+
+build/
+/dist/
+knightian_model.egg-info/
+*.DS_Store
+*.TODO
+*.noseids
+*.coverage
+*.h5
