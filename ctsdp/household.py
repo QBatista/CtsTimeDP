@@ -4,7 +4,7 @@ A module for solving continuous-time consumption saving problems.
 """
 
 import numpy as np
-from scipy import sparse, optimize
+from scipy import sparse, optimize, interpolate
 from ctsdp.util import (CRRA_utility_function_factory, discrete_normal,
                         verbose_decorator_factory)
 import plotly.graph_objs as go
@@ -21,6 +21,8 @@ end_kfe_msg = '...solved the KFE.'
 start_mpc_msg = 'Step 3: Computing marginal propensity to consume (MPC)...'
 end_mpc_msg = '...computed MPCs.'
 
+# TODO(QBatista):
+# - Add documentation
 
 class Household():
     """
@@ -71,7 +73,8 @@ class Household():
     def _create_asset_grid(self, b_lim, a_max, num, α):
         a_grid = np.linspace(0, 1, num=num) ** (1 / α)
         a_grid = b_lim + (a_max - b_lim) * a_grid
-        self.a_grid = a_grid.reshape((1, -1))
+        self.a_grid_1d = a_grid
+        self.a_grid = a_grid.reshape((1, -1))  # Chosen to match C-order
 
     def solve_problem(self, δ_hjb=1e10, max_iter_hjb=100, tol_hjb=1e-8,
                       δ_mpc=1e-2, cum_con_T=1.):
@@ -173,17 +176,20 @@ class Household():
         a_δ[:, 0] = 0.5 * self.Δa_grid[:, 0]
         a_δ[:, 1:-1] = 0.5 * self.Δa_grid[:, :-1] + 0.5 * self.Δa_grid[:, 1:]
         a_δ[:, -1] = 0.5 * self.Δa_grid[:, -1]
-
-        n = self.A.shape[0]
+        self.a_δ = a_δ
 
         A_g = self.A.T
-        b_g = np.zeros(n)
+        b_g = np.zeros(self.n)
         b_g[0] = rel_sol_constant
 
         g = sparse.linalg.spsolve(A_g, b_g)
         g = g / g.sum()
-        g = g.reshape((self.num_y, self.num_a))
-        self.g = g / a_δ
+        self.g = g.reshape((self.num_y, self.num_a))
+        self.g_adj = self.g / a_δ
+
+        a_cdf = (self.g_adj.sum(axis=0) * self.a_δ).cumsum()
+        self.interp_cdf = interpolate.PchipInterpolator(x=self.a_grid_1d,
+                                                        y=a_cdf)
 
         self.kfe_solved = True
 
@@ -222,60 +228,81 @@ class Household():
                   '#17becf'   # blue-teal
                   ]
 
-        fig = go.FigureWidget(make_subplots(rows=3,
-                            cols=2,
-                            subplot_titles=['Value Function',
-                                            'Income Distribution',
-                                            'Optimal Consumption Policy Function',
-                                            'Optimal Savings Policy Function',
-                                            'Stationary Asset Distribution'],
-                            specs=[[{}, {}],
-                                   [{}, {}],
-                                   [{"colspan": 2}, None]]))
+        subplot_titles = ['Value Function',
+                          'Income Distribution',
+                          'Optimal Consumption Policy Function',
+                          'Optimal Savings Policy Function',
+                          'Stationary Asset Distribution',
+                          'Marginal Propensity to Consume (MPC)',
+                          'Distribution of MPC']
 
-        a_grid_ravel = self.a_grid.ravel()
+        subplots = make_subplots(rows=4, cols=2, subplot_titles=subplot_titles,
+                                 specs=[[{}, {}],
+                                        [{}, {}],
+                                        [{"colspan": 2}, None],
+                                        [{}, {}]])
 
-        fig.add_trace(go.Scatter(x=a_grid_ravel,
-                                 y=(self.g.T @ self.y_dist).ravel(),
+        fig = go.FigureWidget(subplots)
+
+        # Stationary Asset Distribution
+        bin_size = 0.01
+        bins = np.arange(self.a_grid_1d[0], self.a_grid_1d[-1], bin_size)
+
+        a_hist = np.zeros(len(bins))
+        a_hist[0] = self.interp_cdf(bins[0])
+        a_hist[1:] = self.interp_cdf(bins[1:]) - self.interp_cdf(bins[:-1])
+
+        fig.add_trace(go.Scatter(x=bins,
+                                 y=a_hist,
                                  name='Asset Dist.',
                                  showlegend=False),
                       row=3, col=1)
 
-        fig.add_trace(go.Bar(x=self.y_grid.ravel(),
-                             y=self.y_dist.ravel(),
+        # Income Distribution
+        fig.add_trace(go.Bar(x=self.y_grid_1d,
+                             y=self.y_dist_1d,
                              showlegend=False,
                              name='Inc. Dist.'),
                       row=1, col=2)
+
+        # MPC Distribution
+        bin_size = 0.02
+        bins = np.arange(0., 1., bin_size)
+        hist, bins = np.histogram(self.mpc, bins=bins, weights=self.g)
+
+        fig.add_trace(go.Bar(x=bins,
+                             y=hist,
+                             showlegend=False,
+                             name='MPC Dist.'),
+                      row=4, col=2)
+
+        objects = [(1, 1, False, self.V),  # Optimal Value Function
+                   (2, 1, True, self.con),  # Optimal Consumption Policy
+                   (2, 2, False, self.sav),  # Optimal Savings Policy
+                   (4, 1, False, self.mpc)]  # MPC Amount
 
         for i in range(self.num_y):
             y_i = ('y_' + str(i+1) + ' = ' +
                    str(np.asscalar(self.y_grid[i].round(4))))
 
-            fig.add_trace(go.Scatter(x=a_grid_ravel,
-                                     y=self.V[i],
-                                     legendgroup=y_i,
-                                     name=y_i,
-                                     showlegend=False,
-                                     line={'color': colors[i]}),
-                                     row=1, col=1)
+            for row_i, col_i, showlegend, obj in objects:
+                fig.add_trace(go.Scatter(x=self.a_grid_1d,
+                                         y=obj[i],
+                                         legendgroup=y_i,
+                                         name=y_i,
+                                         showlegend=showlegend,
+                                         line={'color': colors[i]}),
+                              row=row_i, col=col_i)
 
-            fig.add_trace(go.Scatter(x=a_grid_ravel,
-                                     y=self.con[i],
-                                     legendgroup=y_i,
-                                     name=y_i,
-                                     showlegend=True,
-                                     line={'color': colors[i]}),
-                                     row=2, col=1)
 
-            fig.add_trace(go.Scatter(x=a_grid_ravel,
-                                     y=self.sav[i],
-                                     legendgroup=y_i,
-                                     name=y_i,
-                                     showlegend=False,
-                                     line={'color': colors[i]}),
-                                     row=2, col=2)
+        # Theoretical MPC
+        mpc_lim_data = np.array([self.mpc_lim] * self.num_a)
+        fig.add_trace(go.Scatter(x=self.a_grid_1d, y=mpc_lim_data,
+                                 name='Theoretical MPC',
+                                 line={'color': 'black', 'dash':'dash'}),
+                      row=4, col=1)
 
         fig.update_layout(height=height, width=width,
-                          title_text='Household Problem Solution')
+                          title_text='Household Problem Solution Plots')
 
         display(fig)
