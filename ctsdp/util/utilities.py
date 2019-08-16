@@ -5,12 +5,13 @@ A module containing utility functions for solving continuous time DP problems.
 
 import numpy as np
 from scipy import stats
+import time
 
 
 def discrete_normal(width, μ, σ, num):
     norm_cdf = stats.norm(μ, σ).cdf
     pts = np.linspace(μ - width * σ, μ + width * σ, num=num)
-    pts = pts.reshape((-1, 1))
+    pts = pts.reshape((-1, 1))  # Chosen to match C-order
 
     probs = np.zeros(pts.shape)
     probs[0] = norm_cdf((pts[0] + pts[1]) / 2)
@@ -40,9 +41,16 @@ def verbose_decorator_factory(start_msg, end_msg):
     def decorator(func):
         def wrapper(*args, **kwargs):
             if args[0].verbose:  # Works for classes only
+                start = time.time()
                 print(start_msg)
                 func(*args, **kwargs)
                 print(end_msg)
+                elapsed = time.time() - start
+                m, s = divmod(elapsed, 60)
+                h, m = divmod(m, 60)
+                digits = 8
+                print("Elapsed time on this step: %d:%02d:%0d.%0*d" %
+                      (h, m, s, digits, (s % 1)*(10**digits)))
             else:
                 func(*args, **kwargs)
         return wrapper
