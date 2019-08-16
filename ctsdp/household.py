@@ -52,17 +52,17 @@ class Household():
         self.verbose = verbose
 
     def _create_income_grid(self, μ, σ, num):
-        def discrete_normal_wrapper(width, *args):
-            return discrete_normal(width, *args)[0]
-
         args = (μ, σ, num)
 
         x0 = 1.
-        res = optimize.root(discrete_normal_wrapper, x0, args=args)
+        res = optimize.root(lambda x, *args: discrete_normal(x, *args)[0],
+                            x0, args=args)
 
         if res.success:
             width = res.x
             _, self.y_grid, self.y_dist = discrete_normal(width, *args)
+            self.y_grid_1d = self.y_grid.ravel()
+            self.y_dist_1d = self.y_dist.ravel()
             y_trans = self.arrival_rate * (self.y_dist.T - np.eye(self.num_y))
             y_trans = np.kron(y_trans, np.eye(self.num_a))
             self.y_trans = sparse.csr_matrix(y_trans)
@@ -98,16 +98,16 @@ class Household():
         dV_f[:, -1] = self.u1(con_0[:, -1])
         dV_b[:, 0] = self.u1(con_0[:, 0])
 
-        self.itr_hjb, self.V_diff = 1, 1.
+        self.itr_hjb, self.error_hjb = 1, 1.
 
         while not self.hjb_solved and self.itr_hjb <= max_iter:
-            temp_0 = np.diff(self.V)
+            V_diff = np.diff(self.V)
 
             # Forward difference
-            dV_f[:, :-1] = temp_0 / Δa_grid_f[:, :-1]
+            dV_f[:, :-1] = V_diff / Δa_grid_f[:, :-1]
 
             # Backward difference
-            dV_b[:, 1:] = temp_0 / Δa_grid_b[:, 1:]
+            dV_b[:, 1:] = V_diff / Δa_grid_b[:, 1:]
 
             # Consumption and savings with forward difference
             con_f = self.u1_inv(dV_f)
@@ -148,8 +148,7 @@ class Household():
                       sparse.diags(A_up_diag.ravel()[:-1], offsets=1) +
                       self.y_trans)
 
-            A_hjb = ((self.ρ + 1 / δ) * sparse.eye(self.num_a * self.num_y) -
-                     self.A)
+            A_hjb = (self.ρ + 1 / δ) * sparse.eye(self.n) - self.A
             b_hjb = util.ravel() + self.V.ravel() / δ
 
             V_new = sparse.linalg.spsolve(A_hjb, b_hjb).reshape(self.V.shape)
@@ -160,12 +159,13 @@ class Household():
             raise ValueError('Failed to solve HJB equation.')
 
     def _update_hjb(self, V_new, tol):
-        self.V_diff = np.max(np.abs(V_new - self.V))
-        self.hjb_solved = self.V_diff < tol
+        self.error_hjb = np.max(np.abs(V_new - self.V))
+        self.hjb_solved = self.error_hjb < tol
         self.V = V_new
 
         if self.verbose and (self.itr_hjb % 5 == 0 or self.hjb_solved):
-            print('Iteration', self.itr_hjb, ': max HJB error is', self.V_diff)
+            print('Iteration', self.itr_hjb, ': max HJB error is',
+                  self.error_hjb)
 
         self.itr_hjb += 1
 
