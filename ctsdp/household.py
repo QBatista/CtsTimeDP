@@ -13,11 +13,13 @@ from IPython.core.display import display
 
 
 start_hjb_fd_msg = \
-    'Solving the HJB equation using the finite difference method...'
+    'Step 1: Solving the HJB equation using the finite difference method...'
 end_hjb_msg = '...solved the HJB equation.'
 start_kfe_linsolve_msg = \
-    'Solving the KFE by solving the linear system of equations...'
+    'Step 2: Solving the KFE by solving the linear system of equations...'
 end_kfe_msg = '...solved the KFE.'
+start_mpc_msg = 'Step 3: Computing marginal propensity to consume (MPC)...'
+end_mpc_msg = '...computed MPCs.'
 
 
 class Household():
@@ -28,7 +30,7 @@ class Household():
     """
     def __init__(self, γ=1., ρ=0.005275, r=0.005, μ_y=1., σ_y=0.25, num_y=5,
                  arrival_rate=0.25, b_lim=0., a_max=400., num_a=100,
-                 α_grid=0.4, verbose=True):
+                 α_grid=0.4, mpc_amount=1e-10, verbose=True):
         self.u, self.u1, self.u1_inv = CRRA_utility_function_factory(γ)
         self.γ = γ
         self.ρ = ρ
@@ -36,6 +38,8 @@ class Household():
         self.arrival_rate = arrival_rate
         self.num_y = num_y
         self.num_a = num_a
+        self.n = num_y * num_a
+        self.mpc_amount = mpc_amount
 
         self.hjb_solved = False
         self.kfe_solved = False
@@ -69,9 +73,11 @@ class Household():
         a_grid = b_lim + (a_max - b_lim) * a_grid
         self.a_grid = a_grid.reshape((1, -1))
 
-    def solve_problem(self, δ_hjb=1e10, max_iter_hjb=100, tol_hjb=1e-8):
+    def solve_problem(self, δ_hjb=1e10, max_iter_hjb=100, tol_hjb=1e-8,
+                      δ_mpc=1e-2, cum_con_T=1.):
         self._solve_hjb_fd(δ_hjb, max_iter_hjb, tol_hjb)
         self._solve_kfe_linsolve()
+        self._compute_mpc(δ_mpc, cum_con_T)
 
     @verbose_decorator_factory(start_hjb_fd_msg, end_hjb_msg)
     def _solve_hjb_fd(self, δ, max_iter, tol):
@@ -181,7 +187,29 @@ class Household():
 
         self.kfe_solved = True
 
-    def plot_problem_solution(self, height=800, width=900):
+    @verbose_decorator_factory(start_mpc_msg, end_mpc_msg)
+    def _compute_mpc(self, δ_mpc, cum_con_T):
+        cum_con = np.zeros(self.n)
+
+        A_mpc = (sparse.eye(self.n) / δ_mpc - self.A)
+        for i in np.arange(1., 0. - δ_mpc, -δ_mpc):
+            b_mpc = self.con.ravel() + cum_con / δ_mpc
+            cum_con = sparse.linalg.spsolve(A_mpc, b_mpc)
+
+        cum_con = cum_con.reshape(self.V.shape)
+        self.mpc = np.zeros_like(self.V)
+
+        for y_i in range(self.num_y):
+            interp_f = interpolate.PchipInterpolator(x=self.a_grid_1d,
+                                                     y=cum_con[y_i],
+                                                     extrapolate=True)
+
+            self.mpc[y_i] = (interp_f(self.a_grid + self.mpc_amount) -
+                             cum_con[y_i]) / self.mpc_amount
+
+        self.mpc_lim = cum_con_T * ((self.ρ - self.r) / self.γ + self.r)
+
+    def plot_problem_solution(self, height=1300, width=900):
         colors = ['#1f77b4',  # muted blue
                   '#ff7f0e',  # safety orange
                   '#2ca02c',  # cooked asparagus green
