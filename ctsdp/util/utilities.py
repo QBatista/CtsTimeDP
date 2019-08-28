@@ -23,7 +23,7 @@ def discrete_normal(width, μ, σ, num):
     μ_pts = probs.T @ pts
     σ_pts = np.sqrt(probs.T @ pts ** 2 - μ_pts ** 2)
 
-    error = np.asscalar(σ_pts - σ)
+    error = (σ_pts - σ).item()
 
     return np.abs(error), pts, probs
 

@@ -14,24 +14,24 @@ TOL = 1e-3  # Matlab output is rounded to 4 digits
 mat = spio.loadmat(os.path.join(os.path.dirname(__file__),
                                 'data/consav_output.mat'))
 
-γ = np.asscalar(mat['risk_aver'])
-ρ = np.asscalar(mat['rho'])
-r = np.asscalar(mat['r'])
-μ_y = np.asscalar(mat['mu_y'])
-σ_y = np.asscalar(mat['sd_y'])
-num_y = np.asscalar(mat['ny'])
-arrival_rate = np.asscalar(mat['arrivalrate_y'])
-b_lim = np.asscalar(mat['borrow_lim'])
-a_max = np.asscalar(mat['amax'])
-num_a = np.asscalar(mat['na'])
-α_grid = np.asscalar(mat['agrid_par'])
+γ = mat['risk_aver'].item()
+ρ = mat['rho'].item()
+r = mat['r'].item()
+μ_y = mat['mu_y'].item()
+σ_y = mat['sd_y'].item()
+num_y = mat['ny'].item()
+arrival_rate = mat['arrivalrate_y'].item()
+b_lim = mat['borrow_lim'].item()
+a_max = mat['amax'].item()
+num_a = mat['na'].item()
+α_grid = mat['agrid_par'].item()
 
-δ_hjb = np.asscalar(mat['delta_hjb'])
-max_iter_hjb = np.asscalar(mat['maxiter_hjb'])
-tol_hjb = np.asscalar(mat['tol_hjb'])
+δ_hjb = mat['delta_hjb'].item()
+max_iter_hjb = mat['maxiter_hjb'].item()
+tol_hjb = mat['tol_hjb'].item()
 
 hh = Household(γ, ρ, r, μ_y, σ_y, num_y, arrival_rate, b_lim, a_max, num_a,
-			   α_grid, verbose=False)
+               α_grid, verbose=False)
 
 hh.solve_problem(δ_hjb, max_iter_hjb, tol_hjb)
 
@@ -41,4 +41,4 @@ def test_V():
 
 
 def test_g():
-    assert np.max(np.abs(hh.g - mat['gmat'].T)) < TOL
+    assert np.max(np.abs(hh.g_adj - mat['gmat'].T)) < TOL
